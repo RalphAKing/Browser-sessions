@@ -1,8 +1,11 @@
 import argparse
 import os
+import shutil
 import sqlite3
 import subprocess
-from flask import Flask, request, redirect, url_for, render_template_string
+import json  
+
+from flask import Flask, request, redirect, url_for, render_template_string, jsonify
 
 DB_FILE = "sessions.db"
 
@@ -64,14 +67,81 @@ def get_session_id(session_name):
     return session_id
 
 
-def launch_chromium(session_name):
+def create_autopin_extension(pinned_urls):
     """
-    Launch a new Chromium instance using a dedicated user data directory
-    for the given session. This instance opens all pinned URLs loaded from
-    the local database.
+    Automatically creates the auto-pin extension files in a folder
+    named "auto_pin_extension" in the current working directory.
+    This version uses Manifest V3.
     """
+    ext_dir = os.path.join(os.getcwd(), "auto_pin_extension")
+    if not os.path.exists(ext_dir):
+        os.makedirs(ext_dir, exist_ok=True)
 
+    manifest_content = {
+        "manifest_version": 3,
+        "name": "Auto Pin Tabs",
+        "version": "1.0",
+        "description": "Automatically pins tabs matching specific URL substrings.",
+        "background": {"service_worker": "background.js"},
+        "permissions": ["tabs"],
+        "host_permissions": ["<all_urls>"],
+    }
+
+    background_content = f"""
+// List of URL substrings that should be auto-pinned.
+const pinnedUrls = {json.dumps(pinned_urls)};
+"""
+    background_content += """
+function checkAndPinTab(tab) {
+  if (!tab.url) return;
+  for (const urlSubstring of pinnedUrls) {
+    if (tab.url.includes(urlSubstring)) {
+      chrome.tabs.update(tab.id, { pinned: true }, () => {
+        console.log("Pinned tab: " + tab.url);
+      });
+      break;
+    }
+  }
+}
+
+// When a tab is created.
+chrome.tabs.onCreated.addListener((tab) => {
+  if (tab.url) {
+    checkAndPinTab(tab);
+  }
+});
+
+// When a tab is updated (e.g., when loading completes).
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (changeInfo.status === "complete" && tab.url) {
+    checkAndPinTab(tab);
+  }
+});
+
+// On startup, check all current tabs.
+chrome.tabs.query({}, (tabs) => {
+  for (const tab of tabs) {
+    checkAndPinTab(tab);
+  }
+});
+"""
+
+    with open(os.path.join(ext_dir, "manifest.json"), "w") as mf:
+        json.dump(manifest_content, mf, indent=2)
+    with open(os.path.join(ext_dir, "background.js"), "w") as bf:
+        bf.write(background_content)
+
+    return ext_dir
+
+
+def launch_chromium(session_name, fresh=False, use_autopin=True):
+    """
+    Launch a new Chromium instance using a dedicated user-data directory for the
+    given session. It loads pinned URLs from the database and (if enabled) the
+    auto-pin extension so that matching tabs are pinned automatically.
+    """
     session_id = get_session_id(session_name)
+
 
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
@@ -80,36 +150,47 @@ def launch_chromium(session_name):
     conn.close()
 
     profile_dir = os.path.join(os.getcwd(), "profiles", session_name)
+    if fresh and os.path.exists(profile_dir):
+        shutil.rmtree(profile_dir)
     os.makedirs(profile_dir, exist_ok=True)
 
     chromium_path = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
+
 
     command = [
         chromium_path,
         f"--user-data-dir={profile_dir}",
         "--new-window",
     ]
+
+    if use_autopin:
+        ext_dir = create_autopin_extension(urls)  
+        command.append(f"--load-extension={ext_dir}")
+
     command.extend(urls)
 
     try:
         subprocess.Popen(command)
-        print(f"Launched Chromium session '{session_name}' with URLs: {urls}")
+        print(
+            f"Launched Chromium session '{session_name}' with profile "
+            f"'{profile_dir}' and URLs: {urls}"
+        )
     except Exception as e:
         print(f"Failed to launch Chromium: {e}")
 
 
 # -----------------------------------------------
-# Flask web interface for managing sessions.
+# Flask Web Interface for Managing Sessions.
 # -----------------------------------------------
 app = Flask(__name__)
 
 index_template = """
 <!doctype html>
 <html>
-<head>
+  <head>
     <title>Browser Sessions</title>
-</head>
-<body>
+  </head>
+  <body>
     <h1>Browser Sessions</h1>
     <ul>
       {% for session in sessions %}
@@ -117,7 +198,8 @@ index_template = """
         <a href="{{ url_for('session_view', session_name=session[1]) }}">
           {{ session[1] }}
         </a>
-        - <a href="{{ url_for('run_session', session_name=session[1]) }}">
+        -
+        <a href="{{ url_for('run_session', session_name=session[1]) }}">
           Launch Session
         </a>
       </li>
@@ -128,17 +210,17 @@ index_template = """
       <input type="text" name="session_name" placeholder="Session name" required>
       <input type="submit" value="Create Session">
     </form>
-</body>
+  </body>
 </html>
 """
 
 session_view_template = """
 <!doctype html>
 <html>
-<head>
+  <head>
     <title>Session: {{ session_name }}</title>
-</head>
-<body>
+  </head>
+  <body>
     <h1>Session: {{ session_name }}</h1>
     <h2>Pinned Tabs</h2>
     <ul>
@@ -146,10 +228,10 @@ session_view_template = """
       <li>{{ tab[1] }}</li>
       {% endfor %}
     </ul>
-    <form action="{{ url_for('add_pinned_tab', session_name=session_name) }}" 
+    <form action="{{ url_for('add_pinned_tab', session_name=session_name) }}"
           method="post">
-        <input type="url" name="url" placeholder="Enter URL to pin" required>
-        <input type="submit" value="Add Pinned Tab">
+      <input type="url" name="url" placeholder="Enter URL to pin" required>
+      <input type="submit" value="Add Pinned Tab">
     </form>
 
     <h2>Credentials</h2>
@@ -160,16 +242,16 @@ session_view_template = """
       </li>
       {% endfor %}
     </ul>
-    <form action="{{ url_for('add_credential', session_name=session_name) }}" 
+    <form action="{{ url_for('add_credential', session_name=session_name) }}"
           method="post">
-        <input type="text" name="website" placeholder="Website" required>
-        <input type="text" name="username" placeholder="Username">
-        <input type="text" name="password" placeholder="Password" required>
-        <input type="submit" value="Add Credential">
+      <input type="text" name="website" placeholder="Website" required>
+      <input type="text" name="username" placeholder="Username">
+      <input type="text" name="password" placeholder="Password" required>
+      <input type="submit" value="Add Credential">
     </form>
 
     <p><a href="{{ url_for('index') }}">Back to Sessions List</a></p>
-</body>
+  </body>
 </html>
 """
 
@@ -239,10 +321,8 @@ def add_credential(session_name):
         conn = sqlite3.connect(DB_FILE)
         c = conn.cursor()
         c.execute(
-            """
-            INSERT INTO credentials (session_id, website, username, password)
-            VALUES (?, ?, ?, ?)
-            """,
+            "INSERT INTO credentials (session_id, website, username, password) "
+            "VALUES (?, ?, ?, ?)",
             (session_id, website, username, password),
         )
         conn.commit()
@@ -252,8 +332,11 @@ def add_credential(session_name):
 
 @app.route("/run_session/<session_name>")
 def run_session(session_name):
-    launch_chromium(session_name)
+    launch_chromium(session_name, fresh=True)
     return redirect(url_for("session_view", session_name=session_name))
+
+
+
 
 
 if __name__ == "__main__":
@@ -264,6 +347,11 @@ if __name__ == "__main__":
         help="Name of the browser session to launch (e.g., --session home)",
     )
     parser.add_argument(
+        "--fresh",
+        action="store_true",
+        help="Launch the session with a fresh profile (clears existing profile data)",
+    )
+    parser.add_argument(
         "--webui", action="store_true", help="Launch the GUI web interface"
     )
     args = parser.parse_args()
@@ -271,7 +359,7 @@ if __name__ == "__main__":
     init_db()
 
     if args.session:
-        launch_chromium(args.session)
+        launch_chromium(args.session, fresh=args.fresh)
     elif args.webui:
         app.run(debug=True, host="0.0.0.0", port=5000)
     else:
