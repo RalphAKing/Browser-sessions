@@ -262,25 +262,120 @@ index_template = """
 <html>
   <head>
     <title>Browser Sessions</title>
+    <style>
+      body {
+        font-family: 'Segoe UI', Arial, sans-serif;
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 20px;
+        background: #f5f5f5;
+      }
+      
+      h1, h2 {
+        color: #2c3e50;
+        border-bottom: 2px solid #3498db;
+        padding-bottom: 10px;
+      }
+      
+      ul {
+        list-style: none;
+        padding: 0;
+      }
+      
+      li {
+        background: white;
+        margin: 10px 0;
+        padding: 15px;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      
+      .session-name {
+        color: #2c3e50;
+        text-decoration: none;
+        font-weight: bold;
+        font-size: 1.1em;
+      }
+      
+      .session-name:hover {
+        color: #3498db;
+      }
+      
+      .launch-btn {
+        background: #27ae60;
+        color: white;
+        text-decoration: none;
+        padding: 8px 15px;
+        border-radius: 4px;
+        transition: background 0.3s;
+      }
+      
+      .launch-btn:hover {
+        background: #219a52;
+      }
+      
+      form {
+        background: white;
+        padding: 20px;
+        border-radius: 8px;
+        margin: 20px 0;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      }
+      
+      input[type="text"] {
+        width: 300px;
+        padding: 8px;
+        margin: 5px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+      }
+      
+      input[type="submit"] {
+        background: #3498db;
+        color: white;
+        border: none;
+        padding: 10px 20px;
+        border-radius: 4px;
+        cursor: pointer;
+        transition: background 0.3s;
+      }
+      
+      input[type="submit"]:hover {
+        background: #2980b9;
+      }
+      
+      .session-controls {
+        display: flex;
+        gap: 10px;
+      }
+    </style>
   </head>
   <body>
     <h1>Browser Sessions</h1>
     <ul>
       {% for session in sessions %}
       <li>
-        <a href="{{ url_for('session_view', session_name=session[1]) }}">
+        <a href="{{ url_for('session_view', session_name=session[1]) }}" class="session-name">
           {{ session[1] }}
         </a>
-        -
-        <a href="{{ url_for('run_session', session_name=session[1]) }}">
-          Launch Session
-        </a>
+        <div class="session-controls">
+          <a href="{{ url_for('session_view', session_name=session[1]) }}" class="launch-btn">
+            Edit Session
+          </a>
+          <a href="{{ url_for('run_session', session_name=session[1]) }}" class="launch-btn">
+            Launch Session
+          </a>
+        </div>
       </li>
       {% endfor %}
     </ul>
+    
     <h2>Create a New Session</h2>
     <form action="{{ url_for('create_session') }}" method="post">
-      <input type="text" name="session_name" placeholder="Session name" required>
+      <input type="text" name="session_name" placeholder="Enter session name" required>
       <input type="submit" value="Create Session">
     </form>
   </body>
@@ -292,17 +387,144 @@ session_view_template = """
 <html>
   <head>
     <title>Session: {{ session_name }}</title>
+    <style>
+      body {
+        font-family: 'Segoe UI', Arial, sans-serif;
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 20px;
+        background: #f5f5f5;
+      }
+      
+      h1, h2 {
+        color: #2c3e50;
+        border-bottom: 2px solid #3498db;
+        padding-bottom: 10px;
+      }
+      
+      ul {
+        list-style: none;
+        padding: 0;
+      }
+      
+      li {
+        background: white;
+        margin: 10px 0;
+        padding: 15px;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      
+      .password-field {
+        -webkit-text-security: disc;
+        font-family: text-security-disc;
+        background: #eee;
+        padding: 3px 8px;
+        border-radius: 4px;
+      }
+      
+      .show-password {
+        cursor: pointer;
+        color: #3498db;
+        margin: 0 10px;
+        font-size: 0.9em;
+      }
+      
+      form {
+        background: white;
+        padding: 20px;
+        border-radius: 8px;
+        margin: 20px 0;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      }
+      
+      input[type="url"],
+      input[type="text"],
+      input[type="password"] {
+        width: 200px;
+        padding: 8px;
+        margin: 5px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+      }
+      
+      input[type="submit"] {
+        background: #3498db;
+        color: white;
+        border: none;
+        padding: 10px 20px;
+        border-radius: 4px;
+        cursor: pointer;
+        transition: background 0.3s;
+      }
+      
+      input[type="submit"]:hover {
+        background: #2980b9;
+      }
+      
+      .delete-btn {
+        background: #e74c3c;
+        color: white;
+        border: none;
+        padding: 5px 10px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 0.9em;
+        transition: background 0.3s;
+      }
+      
+      .delete-btn:hover {
+        background: #c0392b;
+      }
+      
+      .back-link {
+        display: inline-block;
+        margin-top: 20px;
+        color: #3498db;
+        text-decoration: none;
+        font-weight: bold;
+      }
+      
+      .back-link:hover {
+        color: #2980b9;
+      }
+      
+      .credential-info {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      
+      .website {
+        font-weight: bold;
+        color: #2c3e50;
+      }
+      
+      .username {
+        color: #7f8c8d;
+      }
+    </style>
   </head>
   <body>
     <h1>Session: {{ session_name }}</h1>
+    
     <h2>Pinned Tabs</h2>
     <ul>
       {% for tab in pinned_tabs %}
-      <li>{{ tab[1] }}</li>
+      <li>
+        <span>{{ tab[1] }}</span>
+        <form style="display: inline; padding: 0; margin: 0; background: none; box-shadow: none;" 
+              action="{{ url_for('delete_pinned_tab', session_name=session_name, tab_id=tab[0]) }}" 
+              method="post">
+          <button class="delete-btn" type="submit" onclick="return confirm('Delete this pinned tab?')">Delete</button>
+        </form>
+      </li>
       {% endfor %}
     </ul>
-    <form action="{{ url_for('add_pinned_tab', session_name=session_name) }}"
-          method="post">
+    <form action="{{ url_for('add_pinned_tab', session_name=session_name) }}" method="post">
       <input type="url" name="url" placeholder="Enter URL to pin" required>
       <input type="submit" value="Add Pinned Tab">
     </form>
@@ -311,22 +533,46 @@ session_view_template = """
     <ul>
       {% for cred in credentials %}
       <li>
-        {{ cred[1] }} - Username: {{ cred[2] }}, Password: {{ cred[3] }}
+        <div class="credential-info">
+          <span class="website">{{ cred[1] }}</span>
+          <span class="username">{{ cred[2] }}</span>
+          <span class="password-field">{{ cred[3] }}</span>
+          <span class="show-password" onclick="togglePassword(this)">Show</span>
+        </div>
+        <form style="display: inline; padding: 0; margin: 0; background: none; box-shadow: none;" 
+              action="{{ url_for('delete_credential', session_name=session_name, cred_id=cred[0]) }}" 
+              method="post">
+          <button class="delete-btn" type="submit" onclick="return confirm('Delete this credential?')">Delete</button>
+        </form>
       </li>
       {% endfor %}
     </ul>
-    <form action="{{ url_for('add_credential', session_name=session_name) }}"
-          method="post">
+    <form action="{{ url_for('add_credential', session_name=session_name) }}" method="post">
       <input type="text" name="website" placeholder="Website" required>
       <input type="text" name="username" placeholder="Username">
-      <input type="text" name="password" placeholder="Password" required>
+      <input type="password" name="password" placeholder="Password" required>
       <input type="submit" value="Add Credential">
     </form>
 
-    <p><a href="{{ url_for('index') }}">Back to Sessions List</a></p>
+    <a href="{{ url_for('index') }}" class="back-link">← Back to Sessions List</a>
+
+    <script>
+    function togglePassword(element) {
+        const passwordField = element.previousElementSibling;
+        if (passwordField.style.webkitTextSecurity === 'none') {
+            passwordField.style.webkitTextSecurity = 'disc';
+            element.textContent = 'Show';
+        } else {
+            passwordField.style.webkitTextSecurity = 'none';
+            element.textContent = 'Hide';
+        }
+    }
+    </script>
   </body>
 </html>
 """
+
+
 
 
 @app.route("/")
@@ -406,6 +652,24 @@ def add_credential(session_name):
 @app.route("/run_session/<session_name>")
 def run_session(session_name):
     launch_chromium(session_name, fresh=True)
+    return redirect(url_for("session_view", session_name=session_name))
+
+@app.route("/session/<session_name>/delete_pinned_tab/<int:tab_id>", methods=["POST"])
+def delete_pinned_tab(session_name, tab_id):
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("DELETE FROM pinned_tabs WHERE id=?", (tab_id,))
+    conn.commit()
+    conn.close()
+    return redirect(url_for("session_view", session_name=session_name))
+
+@app.route("/session/<session_name>/delete_credential/<int:cred_id>", methods=["POST"])
+def delete_credential(session_name, cred_id):
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("DELETE FROM credentials WHERE id=?", (cred_id,))
+    conn.commit()
+    conn.close()
     return redirect(url_for("session_view", session_name=session_name))
 
 
