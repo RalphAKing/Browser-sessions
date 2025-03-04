@@ -134,19 +134,85 @@ chrome.tabs.query({}, (tabs) => {
     return ext_dir
 
 
+def create_autofill_extension(credentials):
+    """Creates the auto-fill extension files in a folder named 'auto_fill_extension'"""
+    ext_dir = os.path.join(os.getcwd(), "auto_fill_extension")
+    os.makedirs(ext_dir, exist_ok=True)
+
+    manifest_content = {
+        "manifest_version": 3,
+        "name": "Auto Fill Credentials",
+        "version": "1.0",
+        "description": "Automatically fills credentials for specified websites",
+        "permissions": ["activeTab", "scripting"],
+        "host_permissions": ["<all_urls>"],
+        "background": {"service_worker": "background.js"},
+        "content_scripts": [{
+            "matches": ["<all_urls>"],
+            "js": ["content.js"]
+        }]
+    }
+
+    background_content = f"""
+const credentials = {json.dumps(credentials)};
+
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {{
+    if (request.action === "getCredentials") {{
+        const url = request.url;
+        const matchingCred = credentials.find(cred => url.includes(cred.website));
+        sendResponse(matchingCred || null);
+    }}
+}});
+"""
+
+    content_script = """
+function fillCredentials(credentials) {
+    if (!credentials) return;
+    
+    const usernameFields = document.querySelectorAll('input[type="text"], input[type="email"]');
+    const passwordFields = document.querySelectorAll('input[type="password"]');
+    
+    usernameFields.forEach(field => {
+        if (credentials.username) {
+            field.value = credentials.username;
+        }
+    });
+    
+    passwordFields.forEach(field => {
+        field.value = credentials.password;
+    });
+}
+
+chrome.runtime.sendMessage({
+    action: "getCredentials",
+    url: window.location.href
+}, fillCredentials);
+"""
+
+    with open(os.path.join(ext_dir, "manifest.json"), "w") as mf:
+        json.dump(manifest_content, mf, indent=2)
+    with open(os.path.join(ext_dir, "background.js"), "w") as bf:
+        bf.write(background_content)
+    with open(os.path.join(ext_dir, "content.js"), "w") as cf:
+        cf.write(content_script)
+
+    return ext_dir
+
+
 def launch_chromium(session_name, fresh=False, use_autopin=True):
-    """
-    Launch a new Chromium instance using a dedicated user-data directory for the
-    given session. It loads pinned URLs from the database and (if enabled) the
-    auto-pin extension so that matching tabs are pinned automatically.
-    """
     session_id = get_session_id(session_name)
-
-
+    
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
+    
+    # Get pinned URLs
     c.execute("SELECT url FROM pinned_tabs WHERE session_id=?", (session_id,))
     urls = [row[0] for row in c.fetchall()]
+    
+    # Get credentials
+    c.execute("SELECT website, username, password FROM credentials WHERE session_id=?", (session_id,))
+    credentials = [{"website": row[0], "username": row[1], "password": row[2]} for row in c.fetchall()]
+    
     conn.close()
 
     profile_dir = os.path.join(os.getcwd(), "profiles", session_name)
@@ -155,28 +221,35 @@ def launch_chromium(session_name, fresh=False, use_autopin=True):
     os.makedirs(profile_dir, exist_ok=True)
 
     chromium_path = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
-
-
+    
     command = [
         chromium_path,
         f"--user-data-dir={profile_dir}",
         "--new-window",
     ]
 
+    extensions = []
     if use_autopin:
-        ext_dir = create_autopin_extension(urls)  
-        command.append(f"--load-extension={ext_dir}")
+        pin_ext_dir = create_autopin_extension(urls)
+        extensions.append(pin_ext_dir)
+    
+    if credentials:
+        fill_ext_dir = create_autofill_extension(credentials)
+        extensions.append(fill_ext_dir)
+    
+    if extensions:
+        command.append(f"--load-extension={','.join(extensions)}")
 
     command.extend(urls)
 
     try:
         subprocess.Popen(command)
-        print(
-            f"Launched Chromium session '{session_name}' with profile "
-            f"'{profile_dir}' and URLs: {urls}"
-        )
+        print(f"Launched Chromium session '{session_name}' with profile '{profile_dir}'")
+        print(f"Loaded URLs: {urls}")
+        print(f"Loaded credentials for: {[cred['website'] for cred in credentials]}")
     except Exception as e:
         print(f"Failed to launch Chromium: {e}")
+
 
 
 # -----------------------------------------------
